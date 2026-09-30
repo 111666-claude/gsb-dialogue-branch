@@ -34,11 +34,13 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "reward":
 		// 同一个节点进两次。
 		instance := dialogue.NewSession(nodes(), "a")
+		instance.SetFlag("vip", true)
 		instance.Enter("b")
 		instance.Enter("b")
 		fmt.Fprintf(stdout, "reward=%d\n", instance.Reward())
 	case "back":
 		instance := dialogue.NewSession(nodes(), "a")
+		instance.SetFlag("vip", true)
 		instance.Enter("b")
 		ok := instance.Back()
 		fmt.Fprintf(stdout, "ok=%v current=%s\n", ok, instance.Current())

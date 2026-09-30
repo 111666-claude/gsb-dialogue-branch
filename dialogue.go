@@ -1,5 +1,4 @@
 // Package dialogue 是对话树：按前置标记选节点，会话可回退，重复进入不重复发奖励。
-// 缺陷：不校验前置标记、重复进入会重复发奖励、选分支全扫所有节点、回退栈永远是空的。
 package dialogue
 
 // Node 是一个对话节点。
@@ -23,51 +22,74 @@ type Session struct {
 
 // NewSession 用节点表建会话，起点是 start。
 func NewSession(nodes []Node, start string) *Session {
-	table := map[string]Node{}
+	table := make(map[string]Node, len(nodes))
 	for _, node := range nodes {
 		table[node.ID] = node
 	}
-	return &Session{nodes: table, current: start, flags: map[string]bool{}, entered: map[string]bool{}}
+	return &Session{
+		nodes:   table,
+		current: start,
+		flags:   map[string]bool{},
+		entered: map[string]bool{},
+	}
 }
 
 // SetFlag 设置一个剧情标记。
 func (s *Session) SetFlag(name string, value bool) { s.flags[name] = value }
 
-// Enter 进入一个节点。
-// 缺陷：完全不校验 Require，而且每次进入都重复发奖励。
+// Enter 进入一个节点：Require 中所有标记都为真才能进入；
+// 条件不满足或节点不存在时返回 false，且不改当前节点、不压栈、不发奖励。
+// 同一节点只有第一次进入时加 Reward。
 func (s *Session) Enter(nodeID string) bool {
 	node, ok := s.nodes[nodeID]
-	if !ok {
+	if !ok || !s.satisfies(node.Require) {
 		return false
 	}
 	if s.current != nodeID {
 		s.stack = append(s.stack, s.current)
 	}
 	s.current = nodeID
-	s.entered[nodeID] = true
-	s.reward += node.Reward
+	if !s.entered[nodeID] {
+		s.entered[nodeID] = true
+		s.reward += node.Reward
+	}
 	return true
 }
 
-// Choose 按分支名选下一个节点。
-// 缺陷：遍历所有节点找 Goto（而不是只看当前节点），代价随节点数增长。
-func (s *Session) Choose(branch string) bool {
-	target := ""
-	for _, node := range s.nodes {
-		s.scanned++
-		if next, ok := node.Goto[branch]; ok && node.ID == s.current {
-			target = next
+// satisfies 判断当前标记是否满足节点的全部前置条件，代价只与 Require 条目数有关。
+func (s *Session) satisfies(require map[string]bool) bool {
+	for flag, want := range require {
+		if s.flags[flag] != want {
+			return false
 		}
 	}
-	if target == "" {
+	return true
+}
+
+// Choose 按分支名选下一个节点：只查当前节点的 Goto，O(1) 定位，
+// Scanned 每次成功定位至多记 1，与节点总数无关。目标节点仍需通过 Enter 的前置校验。
+func (s *Session) Choose(branch string) bool {
+	node, ok := s.nodes[s.current]
+	if !ok {
 		return false
 	}
+	target, ok := node.Goto[branch]
+	if !ok {
+		return false
+	}
+	s.scanned++
 	return s.Enter(target)
 }
 
-// Back 回到上一个节点。缺陷：栈从来没人写过，永远失败。
+// Back 弹出栈顶节点成为当前节点；栈为空时返回 false。
 func (s *Session) Back() bool {
-	return false
+	n := len(s.stack)
+	if n == 0 {
+		return false
+	}
+	s.current = s.stack[n-1]
+	s.stack = s.stack[:n-1]
+	return true
 }
 
 // Current 是当前节点 ID。

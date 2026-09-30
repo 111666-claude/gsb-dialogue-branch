@@ -16,7 +16,9 @@ func TestStartsAtStartNode(t *testing.T) {
 }
 
 func TestEnterKnownNode(t *testing.T) {
-	if !session().Enter("b") {
+	instance := session()
+	instance.SetFlag("vip", true)
+	if !instance.Enter("b") {
 		t.Fatal("进入已知节点应该成功")
 	}
 }
@@ -29,6 +31,7 @@ func TestEnterUnknownNodeFails(t *testing.T) {
 
 func TestRewardAfterFirstEnter(t *testing.T) {
 	instance := session()
+	instance.SetFlag("vip", true)
 	instance.Enter("b")
 	if instance.Reward() <= 0 {
 		t.Fatal("进入带奖励的节点应该加奖励")
