@@ -1,5 +1,4 @@
 // Package dialogue 是对话树：按前置标记选节点，会话可回退，重复进入不重复发奖励。
-// 缺陷：不校验前置标记、重复进入会重复发奖励、选分支全扫所有节点、回退栈永远是空的。
 package dialogue
 
 // Node 是一个对话节点。
@@ -33,41 +32,58 @@ func NewSession(nodes []Node, start string) *Session {
 // SetFlag 设置一个剧情标记。
 func (s *Session) SetFlag(name string, value bool) { s.flags[name] = value }
 
-// Enter 进入一个节点。
-// 缺陷：完全不校验 Require，而且每次进入都重复发奖励。
+// allowed 检查节点的全部前置标记是否满足。
+func (s *Session) allowed(node Node) bool {
+	for name, want := range node.Require {
+		if s.flags[name] != want {
+			return false
+		}
+	}
+	return true
+}
+
+// Enter 进入一个节点：Require 里所有标记满足才进入，
+// 否则返回 false 且不改当前节点、不压栈、不发奖励；只有第一次进入才发奖励。
 func (s *Session) Enter(nodeID string) bool {
 	node, ok := s.nodes[nodeID]
-	if !ok {
+	if !ok || !s.allowed(node) {
 		return false
 	}
 	if s.current != nodeID {
 		s.stack = append(s.stack, s.current)
 	}
 	s.current = nodeID
-	s.entered[nodeID] = true
-	s.reward += node.Reward
+	if !s.entered[nodeID] {
+		s.entered[nodeID] = true
+		s.reward += node.Reward
+	}
 	return true
 }
 
 // Choose 按分支名选下一个节点。
-// 缺陷：遍历所有节点找 Goto（而不是只看当前节点），代价随节点数增长。
+// 只看当前节点的 Goto，代价 O(1)，与节点总数无关。
 func (s *Session) Choose(branch string) bool {
-	target := ""
-	for _, node := range s.nodes {
-		s.scanned++
-		if next, ok := node.Goto[branch]; ok && node.ID == s.current {
-			target = next
-		}
-	}
-	if target == "" {
+	node, ok := s.nodes[s.current]
+	if !ok {
 		return false
 	}
-	return s.Enter(target)
+	s.scanned++
+	next, ok := node.Goto[branch]
+	if !ok {
+		return false
+	}
+	return s.Enter(next)
 }
 
-// Back 回到上一个节点。缺陷：栈从来没人写过，永远失败。
+// Back 弹出上一个节点成为当前节点，栈空时返回 false。
 func (s *Session) Back() bool {
-	return false
+	if len(s.stack) == 0 {
+		return false
+	}
+	last := len(s.stack) - 1
+	s.current = s.stack[last]
+	s.stack = s.stack[:last]
+	return true
 }
 
 // Current 是当前节点 ID。
